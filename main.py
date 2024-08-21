@@ -3,6 +3,7 @@
 
 import pygame
 import sys
+import random
 
 pygame.init()
 
@@ -14,20 +15,43 @@ BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 BLUE = (0, 0, 255)
 RED = (255, 0, 0)
+YELLOW = (255, 255, 0)
+GRID_COLOR = (87, 246, 212) 
+
+FPS = 15
+TRAIL_SIZE = 10  
+GRID_SIZE = 40 
+
+
+def load_image(filename, width=None, height=None):
+    image = pygame.image.load(f"images/{filename}")
+    if width and height:
+        image = pygame.transform.scale(image, (width, height))
+    return image
+
+tron_red = load_image("tron_red.png", 20, 30)
+tron_blue = load_image("tron_blue.png", 20, 30)
+bg_image = load_image("bg.jpg", WIDTH, HEIGHT)
 
 CLOCK = pygame.time.Clock()
-FPS = 15
 
-UP = (0, -10)
-DOWN = (0, 10)
-LEFT = (-10, 0)
-RIGHT = (10, 0)
+UP = (0, -TRAIL_SIZE)
+DOWN = (0, TRAIL_SIZE)
+LEFT = (-TRAIL_SIZE, 0)
+RIGHT = (TRAIL_SIZE, 0)
+
+
+theme_music = pygame.mixer.Sound("audio/theme.mp3")
+countdown_sound = pygame.mixer.Sound("audio/count.mp3")
+game_over_sound = pygame.mixer.Sound("audio/game.mp3")
+game_music_choices = ["audio/song1.mp3", "audio/song2.mp3"]
 
 class Player:
-    def __init__(self, color, start_pos):
+    def __init__(self, color, start_pos, image):
         self.color = color
+        self.image = image
         self.positions = [start_pos]
-        self.direction = UP  
+        self.direction = UP
         self.alive = True
 
     def update(self):
@@ -40,22 +64,48 @@ class Player:
                 self.alive = False
 
     def draw(self):
-        for position in self.positions:
-            pygame.draw.rect(SCREEN, self.color, (*position, 10, 10))
+        for i in range(len(self.positions) - 1):
+            pygame.draw.rect(SCREEN, self.color, (*self.positions[i], TRAIL_SIZE, TRAIL_SIZE))
+        for position in [self.positions[-1]]:
+            angle = self._get_rotation_angle()
+            rotated_image = pygame.transform.rotate(self.image, angle)
+            rect = rotated_image.get_rect(center=(position[0] + TRAIL_SIZE // 2, position[1] + TRAIL_SIZE // 2))
+            SCREEN.blit(rotated_image, rect.topleft)
+
+    def _get_rotation_angle(self):
+        if self.direction == UP:
+            return 0
+        elif self.direction == RIGHT:
+            return 90
+        elif self.direction == DOWN:
+            return 180
+        elif self.direction == LEFT:
+            return 270
 
     def change_direction(self, direction):
         if (self.direction[0] * -1, self.direction[1] * -1) != direction:
             self.direction = direction
 
 def show_home_page():
-    SCREEN.fill(BLACK)
+    theme_music.play(-1) 
+    SCREEN.blit(bg_image, (0, 0))
     font = pygame.font.Font(None, 74)
-    text = font.render("Press SPACE to Start", True, WHITE)
-    SCREEN.blit(text, (WIDTH // 2 - text.get_width() // 2, HEIGHT // 2 - text.get_height() // 2))
+    text = font.render("Press SPACE to Start", True, BLACK)
+    
+
+    text_bg = pygame.Surface((text.get_width(), text.get_height()))
+    text_bg.fill(YELLOW)
+    
+  
+    text_rect = text.get_rect(center=(WIDTH // 2, HEIGHT // 2))
+    text_bg_rect = text_bg.get_rect(center=(WIDTH // 2, HEIGHT // 2))
+    
+    SCREEN.blit(text_bg, text_bg_rect)
+    SCREEN.blit(text, text_rect)
     pygame.display.flip()
 
 def show_instructions_page():
-    SCREEN.fill(BLACK)
+    SCREEN.blit(bg_image, (0, 0))
     font = pygame.font.Font(None, 36)
     
     instructions = [
@@ -96,10 +146,33 @@ def show_instructions_page():
                     pygame.quit()
                     sys.exit()
 
+def show_countdown():
+    countdown_sound.play() 
+    font = pygame.font.Font(None, 74)
+    for i in range(3, 0, -1):
+        SCREEN.fill(BLACK) 
+        draw_grid()
+        text = font.render(f"Starting in {i}", True, WHITE)
+        SCREEN.blit(text, (WIDTH // 2 - text.get_width() // 2, HEIGHT // 2 - text.get_height() // 2))
+        pygame.display.flip()
+        pygame.time.wait(1000) 
+
+def draw_grid():
+    for x in range(0, WIDTH, GRID_SIZE):
+        pygame.draw.line(SCREEN, GRID_COLOR, (x, 0), (x, HEIGHT))
+    for y in range(0, HEIGHT, GRID_SIZE):
+        pygame.draw.line(SCREEN, GRID_COLOR, (0, y), (WIDTH, y))
+
 def game_loop():
-    player1 = Player(BLUE, (100, 300))
-    player2 = Player(RED, (700, 300))
+    theme_music.stop() 
+    game_music = pygame.mixer.Sound(random.choice(game_music_choices))
+    game_music.play(-1) 
     
+    player1 = Player(BLUE, (100, 300), tron_blue)
+    player2 = Player(RED, (700, 300), tron_red)
+    
+    show_countdown()
+
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -123,7 +196,7 @@ def game_loop():
                 elif event.key == pygame.K_d:
                     player1.change_direction(RIGHT)
                 elif event.key == pygame.K_SPACE and (not player1.alive or not player2.alive):
-                    return 
+                    return
 
         player1.update()
         player2.update()
@@ -133,11 +206,15 @@ def game_loop():
         if player2.positions[-1] in player1.positions:
             player2.alive = False
 
-        SCREEN.fill(BLACK)
+        SCREEN.fill(BLACK) 
+        draw_grid()
         player1.draw()
         player2.draw()
 
         if not player1.alive or not player2.alive:
+            game_music.stop()  
+            game_over_sound.play() 
+            
             font = pygame.font.Font(None, 74)
             if not player1.alive and not player2.alive:
                 text = font.render("It's a Tie!", True, WHITE)
@@ -154,6 +231,7 @@ def game_loop():
         CLOCK.tick(FPS)
 
 def main():
+    theme_music.play(-1) 
     while True:
         show_home_page()
         waiting_for_start = True
